@@ -39,6 +39,14 @@ private:
 
         std::vector<cv::Point2f> prev_pts, next_pts;
         cv::goodFeaturesToTrack(prev_gray_image_, prev_pts, 100, 0.3, 7);
+
+        if (prev_pts.empty())
+        {
+            RCLCPP_WARN(this->get_logger(), "No good features to track found in the previous frame.");
+            prev_gray_image_ = gray_image;
+            return;
+        }
+
         std::vector<uchar> status;
         std::vector<float> err;
         cv::calcOpticalFlowPyrLK(prev_gray_image_, gray_image, prev_pts, next_pts, status, err);
