@@ -19,8 +19,12 @@ find_package(OpenCV REQUIRED)
 add_executable(optical_flow_node src/optical_flow_node.cpp)
 ament_target_dependencies(optical_flow_node rclcpp sensor_msgs cv_bridge OpenCV)
 
+add_executable(dense_optical_flow_node src/dense_optical_flow_node.cpp)
+ament_target_dependencies(dense_optical_flow_node rclcpp sensor_msgs cv_bridge OpenCV)
+
 install(TARGETS
   optical_flow_node
+  dense_optical_flow_node
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)

@@ -37,33 +37,57 @@ private:
             return;
         }
 
-        std::vector<cv::Point2f> prev_pts, next_pts;
-        cv::goodFeaturesToTrack(prev_gray_image_, prev_pts, 100, 0.3, 7);
+        // Compute Dense Optical Flow using Farneback
+        cv::Mat flow;
+        cv::calcOpticalFlowFarneback(prev_gray_image_, gray_image, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
 
-        if (prev_pts.empty())
-        {
-            RCLCPP_WARN(this->get_logger(), "No good features to track found in the previous frame.");
-            prev_gray_image_ = gray_image;
-            return;
-        }
-
-        std::vector<uchar> status;
-        std::vector<float> err;
-        cv::calcOpticalFlowPyrLK(prev_gray_image_, gray_image, prev_pts, next_pts, status, err);
-
-        for (size_t i = 0; i < next_pts.size(); i++)
-        {
-            if (status[i])
-            {
-                cv::line(cv_ptr->image, prev_pts[i], next_pts[i], cv::Scalar(0, 255, 0), 2);
-                cv::circle(cv_ptr->image, next_pts[i], 5, cv::Scalar(0, 255, 0), -1);
-            }
-        }
+        // Convert Optical Flow to HSV representation
+        cv::Mat flow_image = draw_optical_flow(flow);
 
         prev_gray_image_ = gray_image;
 
-        auto output_msg = cv_bridge::CvImage(msg->header, sensor_msgs::image_encodings::BGR8, cv_ptr->image).toImageMsg();
+        // Convert to ROS Image Message
+        auto output_msg = cv_bridge::CvImage(msg->header, sensor_msgs::image_encodings::BGR8, flow_image).toImageMsg();
         publisher_->publish(*output_msg);
+    }
+
+    cv::Mat draw_optical_flow(const cv::Mat &flow)
+    {
+        // Create HSV image where hue represents direction, and brightness represents magnitude
+        cv::Mat hsv(flow.size(), CV_8UC3);
+
+        // Split flow into x and y components
+        std::vector<cv::Mat> flow_components(2);
+        cv::split(flow, flow_components); // flow_components[0] -> x, flow_components[1] -> y
+
+        // Compute magnitude and angle
+        cv::Mat magnitude, angle;
+        cv::cartToPolar(flow_components[0], flow_components[1], magnitude, angle, true);
+
+        // Normalize magnitude to range [0, 255]
+        double mag_max;
+        cv::minMaxLoc(magnitude, nullptr, &mag_max);
+        if (mag_max > 0) // Avoid division by zero
+            magnitude.convertTo(magnitude, CV_8UC1, 255.0 / mag_max);
+        else
+            magnitude.setTo(cv::Scalar(0));
+
+        // Convert angle to hue (scale from [0,360] to [0,180])
+        cv::Mat hue;
+        angle.convertTo(hue, CV_8UC1, 180.0 / 360.0);
+
+        // Create saturation channel (full intensity)
+        cv::Mat saturation = cv::Mat::ones(hue.size(), CV_8UC1) * 255;
+
+        // Merge HSV channels correctly
+        std::vector<cv::Mat> hsv_channels = {hue, saturation, magnitude};
+        cv::merge(hsv_channels, hsv);
+
+        // Convert HSV to BGR for visualization
+        cv::Mat bgr;
+        cv::cvtColor(hsv, bgr, cv::COLOR_HSV2BGR);
+
+        return bgr;
     }
 
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_;
